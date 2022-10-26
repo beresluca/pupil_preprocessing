@@ -9,7 +9,6 @@ import math
 import sys
 import os
 import argparse
-import datetime
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -31,20 +30,13 @@ mean_plsize = np.nanmean(pl_data.diameter)
 median_plsize = np.nanmedian(pl_data.diameter)
 extr_plsize = [np.nanmin(pl_data.diameter), np.nanmax(pl_data.diameter)]
 sd_plsize = np.nanstd(pl_data.diameter)
-print(mean_plsize, median_plsize, sd_plsize)
-print(extr_plsize)
 
 time = pl_data.timestamp - pl_data.timestamp[0]
 
 # filter data by deviation from the median
-# outliers = []
 lower_threshold = median_plsize - 3 * sd_plsize
 higher_threshold = median_plsize + 3 * sd_plsize
-print(lower_threshold, higher_threshold)
-# for j in range(len(pl_data.diameter)):
-#     if (pl_data.diameter[j] < lower_threshold) or (pl_data.diameter[j] > higher_threshold):
-#         outliers.append(pl_data.diameter[j])
-# print(outliers)
+# print(lower_threshold, higher_threshold)
 
 pl_data.diameter = pl_data.diameter.where(pl_data.diameter <= higher_threshold)
 pl_data_thresh = pl_data.diameter.where(pl_data.diameter >= lower_threshold)
@@ -61,9 +53,7 @@ dial_speed_thres = 10
 diff_dia = np.diff(newdata)
 matplotlib.pyplot.plot(time[0:-1], diff_dia, c="blue", label="difference distribution")
 #plt.show()
-dial_speed = []
-for k in range(len(diff_dia)):
-    dial_speed.append.where(diff_dia[k] > dial_speed_thres)
+
 
 
 

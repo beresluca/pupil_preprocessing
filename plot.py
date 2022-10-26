@@ -54,7 +54,9 @@ diff_dia = np.diff(newdata)
 matplotlib.pyplot.plot(time[0:-1], diff_dia, c="blue", label="difference distribution")
 #plt.show()
 
-
+newdata[(abs(np.diff(newdata, append=np.nan)) > 2)] = np.nan
+matplotlib.pyplot.plot(time, newdata, c="red")
+plt.show()
 
 
 # interpolating over bad data

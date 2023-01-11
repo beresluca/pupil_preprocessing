@@ -29,7 +29,7 @@ from scipy.signal import medfilt, butter, lfilter, detrend, filtfilt
 
 # removing dilation speed outliers
 # relying on the guidelines and code from Kret & Sjak-Shie, 2019
-def dilation_speed(data, thres_val=3):
+def dilation_speed(data, thres_val=4):
     diffs = np.diff(data, prepend=np.nan) / np.diff(time, prepend=np.nan)
     diffs_back = np.diff(data, append=np.nan) / np.diff(time, append=np.nan)
     dil_speed = np.stack((diffs, diffs_back), axis=1)
@@ -48,47 +48,65 @@ def missing_data(data):
     print("Missing {}% of the data at the moment." .format(round(count_nan/len(data) * 100, 4)))
 
 
-# the smaller the min_diff value, the shorter the sections of missing data we interpolate
-def interpolate(data, min_diff=4, max_samples=10000, method="lin", padding=1, n_samples=2):
-    ind = np.array(np.where(np.isnan(data))).flatten()  # find nan-s in the data aka missing values
-    # splits data according to the difference of nan indexes (min_diff), we use this to create sections to interpolate over
-    missing_ind = np.split(ind, np.where(np.diff(ind) > min_diff)[0]+1)
-    data_copy = np.copy(data)  # copy data to interpolate over
-    # for i in blink_ind_to_remove:
-    for i in missing_ind:
-        if i.size == 0:
-            continue
-        if i.size > max_samples:  # still here but right now does not do anything, we interpolate every gap (even long ones)
-            continue
-        # create a vector of data and sample numbers before and after the blink
-        befores = np.arange((i[0] - (n_samples + padding)), (i[0] - padding))
-        afters = np.arange(i[-1] + (1 + padding), i[-1] + (1 + n_samples + padding))
-        # this if statement is a contingency for when the blinks occur at the end of the dataset. it deletes the blink rather than interpolating
-        if any(afters > len(data) - 1):
-            data_noEnds = data_copy[0:i[0] - 1]
-            #print(len(data_noEnds))
-            end_segment = len(data_copy) - len(data_noEnds)
-            data_noEB = np.append(data_noEnds, np.repeat(np.nan, end_segment))
-            #print(len(data_noEB))
-        else:
-            data_noEB = data_copy
-        # this is the actual interpolation part. you create your model dataset to interpolate over
-            x = np.append(befores, afters)
-            y = np.append(data[befores], data[afters])
-        # then interpolate it
-            if method == "lin":
-                li = interp1d(x, y)
-                # create indices for the interpolated data, so you can return it to the right segment of the data
-                xs = range(i[0] - padding, i[-1] + (1 + padding))
-                np.put(data_noEB, xs, li(xs))
-            if method == "cubic":
-                cubic = interp1d(x, y, kind='cubic')
-                # create indices for the interpolated data, so you can return it to the right segment of the data
-                xs = range(i[0] - padding, i[-1] + (1 + padding))
-                np.put(data_noEB, xs, cubic(xs))
+# # the smaller the min_diff value, the shorter the sections of missing data we interpolate
+# def interpolate(data, min_diff=4, max_samples=10000, method="lin", padding=1, n_samples=2):
+#     ind = np.array(np.where(np.isnan(data))).flatten()  # find nan-s in the data aka missing values
+#     # splits data according to the difference of nan indexes (min_diff), we use this to create sections to interpolate over
+#     missing_ind = np.split(ind, np.where(np.diff(ind) > min_diff)[0]+1)
+#     data_copy = np.copy(data)  # copy data to interpolate over
+#     # for i in blink_ind_to_remove:
+#     for i in missing_ind:
+#         if i.size == 0:
+#             continue
+#         if i.size > max_samples:  # still here but right now does not do anything, we interpolate every gap (even long ones)
+#             continue
+#         # create a vector of data and sample numbers before and after the blink
+#         befores = np.arange((i[0] - (n_samples + padding)), (i[0] - padding))
+#         afters = np.arange(i[-1] + (1 + padding), i[-1] + (1 + n_samples + padding))
+#         # this if statement is a contingency for when the blinks occur at the end of the dataset. it deletes the blink rather than interpolating
+#         if any(afters > len(data) - 1):
+#             data_noEnds = data_copy[0:i[0] - 1]
+#             #print(len(data_noEnds))
+#             end_segment = len(data_copy) - len(data_noEnds)
+#             data_noEB = np.append(data_noEnds, np.repeat(np.nan, end_segment))
+#             #print(data_noEB)
+#         else:
+#             data_noEB = data_copy
+#         # this is the actual interpolation part. you create your model dataset to interpolate over
+#             x = np.append(befores, afters)
+#             y = np.append(data[befores], data[afters])
+#             #print(y)
+#         # then interpolate it
+#             if method == "lin":
+#                 li = interp1d(x, y)
+#                 # create indices for the interpolated data, so you can return it to the right segment of the data
+#                 xs = range(i[0] - padding, i[-1] + (1 + padding))
+#                 np.put(data_noEB, xs, li(xs))
+#             if method == "cubic":
+#                 cubic = interp1d(x, y, kind='cubic')
+#                 # create indices for the interpolated data, so you can return it to the right segment of the data
+#                 xs = range(i[0] - padding, i[-1] + (1 + padding))
+#                 np.put(data_noEB, xs, cubic(xs))
+#
+#     return data_noEB
+
+
+def interpolate(data, method="lin"):
+    nan_ind = np.array(np.where(np.isnan(data))).flatten()  # find nan-s in the data aka missing values
+    print(nan_ind)
+    valid_ind = np.array(np.where(~np.isnan(data))).flatten()  # find valid samples
+    print(valid_ind)
+    #indices = np.array([i for i in range(0, len(data))])
+    data_noEB = np.copy(data)
+    # then interpolate it
+    if method == "lin":
+        x = valid_ind
+        y = data_noEB[valid_ind]
+        li = interp1d(x, y, kind="linear", bounds_error=False, fill_value=np.nan)
+        np.put(data_noEB, nan_ind, li(nan_ind))
+        #data_new = np.where(~np.isnan(data_noEB), data_noEB, li(indices))
 
     return data_noEB
-
 
 # lowpass butterworth filtering function
 def butter_lowpass(cutoff, fs, order=5):
@@ -109,8 +127,9 @@ def butter_lowpass_filter(data, cutoff=10, fs=120, order=5):
 
 
 # PARAMETERS
-input_dir = "/media/lucab/data_hdd/lucab/pupildata_CommGame/pair72_Mordor_freeConv/"
-cutconf_at = 0.80  # cutoff for confidence values
+#input_dir = "/media/lucab/data_hdd/lucab/pupildata_CommGame/pair72_Gondor_freeConv/"
+input_dir = "C:\\Users\\Luca\\PycharmProjects\\pupil\\sample_data\\pair72_Gondor_freeConv"
+cutconf_at = 0.75  # cutoff for confidence values
 n_SD = 2  # number of SD-s to cut from median (applied for the whole recording as one of the first steps)
 dil_speed_thres = 6  # threshold value for the dilation speed function to use (multiplier of the median)
 filt_order = 5  # n-th order median filter
@@ -159,7 +178,7 @@ data_dil1 = dilation_speed(newdata, dil_speed_thres)
 matplotlib.pyplot.plot(time, data_dil1, c="red", label="DS outliers removed")
 # let's see how much data we lost so far
 missing_data(data_dil1)
-data_dil2 = dilation_speed(data_dil1, thres_val=5)
+data_dil2 = dilation_speed(data_dil1, thres_val=7)
 matplotlib.pyplot.plot(time, data_dil2, c="blue", label="DS outliers removed (2nd)")
 missing_data(data_dil2)
 #plt.show()
@@ -167,15 +186,15 @@ missing_data(data_dil2)
 
 # Interpolate over missing data
 
-data_interp = interpolate(data_dil2, min_diff=3, padding=1, n_samples=1, method="lin")  # usually needs some adjusting
+data_interp = interpolate(data_dil2, method="lin")  # usually needs some adjusting
 # data_interp2 = interpolate(data_interp, method="cubic")
 print("Interpolation done.")
 
 # plot things so far
-matplotlib.pyplot.plot(time, data_interp, c="violet", label="interpolated")
+matplotlib.pyplot.plot(time, data_interp, c="violet", alpha=0.7, label="interpolated")
 plt.grid(True)
 plt.legend(loc="upper left")
-#plt.show()
+plt.show()
 
 missing_data(data_interp)  # how much do we miss now?
 

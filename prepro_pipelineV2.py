@@ -15,12 +15,11 @@ Steps:
 """
 
 import numpy as np
-import pandas as pd
+from confidence import conf
 import matplotlib
 import scipy
 from matplotlib import pyplot as plt
-from scipy.interpolate import interp1d
-from confidence import conf
+from scipy.interpolate import interp1d, CubicSpline
 from scipy import signal
 from scipy.signal import medfilt, butter, lfilter, detrend, filtfilt
 
@@ -42,7 +41,7 @@ def dilation_speed(data, thres_val=4):
 
     return data
 
-
+# some helper functions
 def missing_data(data):
     count_nan = sum(np.isnan(x) for x in data)
     print("Missing {}% of the data at the moment." .format(round(count_nan/len(data) * 100, 4)))
@@ -93,18 +92,16 @@ def missing_data(data):
 
 def interpolate(data, method="lin"):
     nan_ind = np.array(np.where(np.isnan(data))).flatten()  # find nan-s in the data aka missing values
-    print(nan_ind)
     valid_ind = np.array(np.where(~np.isnan(data))).flatten()  # find valid samples
-    print(valid_ind)
-    #indices = np.array([i for i in range(0, len(data))])
     data_noEB = np.copy(data)
     # then interpolate it
     if method == "lin":
         x = valid_ind
         y = data_noEB[valid_ind]
         li = interp1d(x, y, kind="linear", bounds_error=False, fill_value=np.nan)
+        #li = scipy.interpolate.UnivariateSpline(x, y, s=0)
+        #li = CubicSpline(x, y)
         np.put(data_noEB, nan_ind, li(nan_ind))
-        #data_new = np.where(~np.isnan(data_noEB), data_noEB, li(indices))
 
     return data_noEB
 
@@ -138,19 +135,21 @@ filt_order = 5  # n-th order median filter
 # PREPROCESS DATA
 
 # Apply confidence thresholding
-pl_data = conf(input_dir, cutconf_at)
+pupil_data = conf(input_dir, cutconf_at)
 
 # convert timestamps to readable format
-time = pl_data.timestamp - pl_data.timestamp[0]
+time = pupil_data.timestamp - pupil_data.timestamp[0]
 
-mean_plsize = np.nanmean(pl_data.diameter)
-median_plsize = np.nanmedian(pl_data.diameter)
-extr_plsize = [np.nanmin(pl_data.diameter), np.nanmax(pl_data.diameter)]
-sd_plsize = np.nanstd(pl_data.diameter)
+# convert to numpy array
+time = np.asarray(time)
+pl_data = np.asarray(pupil_data.diameter)
+
+mean_plsize = np.nanmean(pl_data)
+median_plsize = np.nanmedian(pl_data)
+extr_plsize = [np.nanmin(pl_data), np.nanmax(pl_data)]
+sd_plsize = np.nanstd(pl_data)
 print("Median pl size: {}" .format(median_plsize))
 print("SD: {}" .format(sd_plsize))
-# since we have pupil size data in mm, should we cut the very extreme values?
-# e.g. outside the 1-9 range
 
 
 # Filter data by deviation from the median
@@ -160,28 +159,19 @@ higher_threshold = median_plsize + n_SD * sd_plsize
 print("Lower SD threshold: {}" .format(lower_threshold))
 print("Higher SD threshold: {}" .format(higher_threshold))
 
-pl_data.diameter = pl_data.diameter.where(pl_data.diameter <= higher_threshold)  # replaces with nan-s the ones outside the threshold
-pl_data_thresh = pl_data.diameter.where(pl_data.diameter >= lower_threshold)
-matplotlib.pyplot.plot(time, pl_data_thresh, c="grey", label="SD thresholded")
-# windowed way of SD filtering? big windows (5-10 s)
-
-newdata = np.array(pl_data_thresh)
-plt.grid(True)
-plt.legend(loc="upper left")
-#plt.show()
+pl_data[pl_data >= higher_threshold] = np.nan  # replaces with nan-s the ones outside the threshold
+pl_data[pl_data <= lower_threshold] = np.nan
+pl_data_thresh = pl_data
 
 
 # Apply dilation speed filtering
 
 print("Filtering dilation speed outliers...")
-data_dil1 = dilation_speed(newdata, dil_speed_thres)
-matplotlib.pyplot.plot(time, data_dil1, c="red", label="DS outliers removed")
+data_dil1 = dilation_speed(pl_data_thresh, dil_speed_thres)
 # let's see how much data we lost so far
 missing_data(data_dil1)
-data_dil2 = dilation_speed(data_dil1, thres_val=7)
-matplotlib.pyplot.plot(time, data_dil2, c="blue", label="DS outliers removed (2nd)")
+data_dil2 = dilation_speed(data_dil1, thres_val=4)
 missing_data(data_dil2)
-#plt.show()
 
 
 # Interpolate over missing data
@@ -190,22 +180,41 @@ data_interp = interpolate(data_dil2, method="lin")  # usually needs some adjusti
 # data_interp2 = interpolate(data_interp, method="cubic")
 print("Interpolation done.")
 
-# plot things so far
-matplotlib.pyplot.plot(time, data_interp, c="violet", alpha=0.7, label="interpolated")
-plt.grid(True)
-plt.legend(loc="upper left")
-plt.show()
-
 missing_data(data_interp)  # how much do we miss now?
 
 # Apply median filter
 
 med_filt_pldata = scipy.signal.medfilt(data_interp, filt_order)  # automatically zero-pads the data according to filter order
+
+
+# segment the data for easier debugging
+start = 25000
+end = 30000
+pl_data = pupil_data.diameter[start:end]
+pl_data_thresh = pl_data_thresh[start:end]
+data_dil1 = data_dil1[start:end]
+data_dil2 = data_dil2[start:end]
+data_interp = data_interp[start:end]
+med_filt_pldata = med_filt_pldata[start:end]
+time = time[start:end]
+
+# Plots
+
+#matplotlib.pyplot.scatter(time, pl_data, c="green", s=3, label="raw")  # raw data
+matplotlib.pyplot.plot(time, pl_data_thresh, c="grey", label="SD thresholded")
+matplotlib.pyplot.plot(time, data_dil1, c="red", label="DS outliers removed")
+matplotlib.pyplot.plot(time, data_dil2, c="blue", label="DS outliers removed (2nd)")
+matplotlib.pyplot.plot(time, data_interp, c="violet", alpha=0.7, label="interpolated")
+plt.grid(True)
+plt.legend(loc="best")
+plt.show()
 matplotlib.pyplot.plot(time, med_filt_pldata, c="black", label="median filtered")
-plt.legend(loc="upper left")
-plt.grid()
+plt.grid(True)
+plt.legend(loc="best")
 #plt.show()
 
+
+# Apply low-pass filter
 
 # NaN values in input results in all NaN values...
 # interpolation took care of most of them, but we might have some left around the edges of the data,
@@ -226,6 +235,8 @@ else:
     plt.legend(loc="best")
     plt.grid()
     plt.show()  # show the smoothed data
+
+
 
 
 # detrending causes (erroneous) shift in pupil diameters (?)
